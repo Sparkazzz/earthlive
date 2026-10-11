@@ -1,0 +1,8 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';
+import handler from '../netlify/functions/api.mjs';
+import {coordinates,distance,normalizeGeoNet,normalizeTfl} from '../lib/data.mjs';
+test('invalid coordinates are rejected before network access',async()=>{for(const q of ['', 'lat=&lon=', 'lat=91&lon=0','lat=0&lon=181','lat=NaN&lon=0']){const r=await handler(new Request('https://earthlive.test/api/weather?'+q));assert.equal(r.status,400);}});
+test('geographic distance handles the antimeridian',()=>{assert.ok(distance({lat:0,lon:179},{lat:0,lon:-179})<223);assert.equal(distance({lat:0,lon:0},{lat:0,lon:0}),0);});
+test('GeoNet adapter respects the published lat-lon order and deduplicates cameras',()=>{const f={id:'x',geometry:{coordinates:[-39,175]},properties:{title:'A','latest-image-medium':'latest/x.jpg','latest-timestamp':'date'}};const r=normalizeGeoNet([{features:[f]},{features:[f]}]);assert.equal(r.length,1);assert.equal(r[0].lat,-39);assert.equal(r[0].lon,175);assert.equal(r[0].kind,'snapshot');assert.equal(r[0].available,null);});
+test('TfL unavailable flags are preserved and media hosts are constrained',()=>{const f={id:'x',commonName:'A',lat:51,lon:0,additionalProperties:[{key:'available',value:'false'},{key:'imageUrl',value:'https://s3-eu-west-1.amazonaws.com/jamcams.tfl.gov.uk/x.jpg'}]};assert.equal(normalizeTfl([f])[0].available,false);f.additionalProperties[1].value='http://127.0.0.1/private';assert.equal(normalizeTfl([f]).length,0);});
+test('unsupported routes and methods are rejected',async()=>{assert.equal((await handler(new Request('https://earthlive.test/api/private'))).status,404);assert.equal((await handler(new Request('https://earthlive.test/api/cameras',{method:'POST'}))).status,405);});
